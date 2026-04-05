@@ -1,0 +1,30 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=_BACKEND_ROOT / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+    solana_rpc_url: str = "https://api.devnet.solana.com"
+    solana_private_key: str = ""
+    kya_keypair_path: str | None = None
+    kya_program_id: str = ""
+    kya_idl_path: str = Field(
+        default_factory=lambda: str(_BACKEND_ROOT / "idl" / "kya_program.json"),
+    )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

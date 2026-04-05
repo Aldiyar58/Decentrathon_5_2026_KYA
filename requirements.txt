@@ -1,0 +1,6 @@
+SQLAlchemy==2.0.48
+fastapi==0.135.2
+python-dotenv==1.2.2
+psycopg2-binary==2.9.11
+uvicorn==0.42.0
+python-multipart==0.0.22
