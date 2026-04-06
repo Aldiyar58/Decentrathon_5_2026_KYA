@@ -4,6 +4,14 @@ kya-backend/.env
 __pycache__/
 *.pyc
 .pytest_cache/
+.cursor/
+
+.env
+kya-backend/.env
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
 
 .vercel
 *.log
@@ -213,4 +221,3 @@ fabric.properties
 # idea folder, uncomment if you don't need it
 .idea
 .idea/vcs.xml
-
