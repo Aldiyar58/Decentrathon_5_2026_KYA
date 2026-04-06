@@ -10,7 +10,7 @@ python-multipart>=0.0.9
 google-genai>=1.0.0
 
 # Solana / Anchor (Python) — solana<0.36 нужен для anchorpy 0.20 (модуль solana.transaction)
-solana>=0.34.0,<0.36.0
+solana>=0.36.0
 anchorpy>=0.20.0,<0.21.0
 
 # MCP (day 3)
