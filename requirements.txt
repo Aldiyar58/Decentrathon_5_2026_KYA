@@ -9,9 +9,10 @@ python-multipart>=0.0.9
 # Google Gemini (Gen AI SDK)
 google-genai>=1.0.0
 
-# Solana / Anchor (Python) — solana<0.36 нужен для anchorpy 0.20 (модуль solana.transaction)
+# Solana / Anchor: anchorpy 0.21+ использует solders (Transaction и т.д.), совместим с solana-py 0.36+
 solana>=0.36.0
-anchorpy>=0.20.0,<0.21.0
+solders>=0.21.0
+anchorpy>=0.21.0
 
 # MCP (day 3)
 mcp>=1.0.0
