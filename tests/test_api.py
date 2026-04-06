@@ -86,7 +86,38 @@ async def test_register_without_chain_returns_503():
     transport = ASGITransport(app=app)
     try:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            r = await client.post("/agents/register")
+            r = await client.post(
+                "/agents/register",
+                json={"agent_name": "test-agent", "max_amount": 1000},
+            )
+        assert r.status_code == 503
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_get_agent_logs_invalid_pubkey_returns_400():
+    app.dependency_overrides[get_settings] = lambda: _settings_no_chain(
+        kya_program_id="11111111111111111111111111111111",
+    )
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/agents/not-a-pubkey/logs")
+        assert r.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.anyio
+async def test_get_agent_logs_without_program_id_returns_503():
+    app.dependency_overrides[get_settings] = lambda: _settings_no_chain()
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get(
+                "/agents/9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM/logs",
+            )
         assert r.status_code == 503
     finally:
         app.dependency_overrides.clear()

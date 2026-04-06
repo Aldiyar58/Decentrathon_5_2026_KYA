@@ -1,24 +1,23 @@
 # Memory Bank: Progress
 
-## Snapshot
+## Snapshot (2026-04)
 
 | Area | Status |
 |------|--------|
-| Solana | `solana.py`: seeds **`b"agent"`**, **`b"intent_log"`**; `register_agent_on_chain`, `log_intent_on_chain`; `get_agent_info` / `fetch_agent_record_for_owner` через **`program.account[ключ].fetch()`**, ключ **`AgentRecord`** или **`kya::AgentRecord`** (автовыбор) |
-| API | `POST /verify-intent` → Gemini → **`log_intent_on_chain`**; **`GET /agents/{agent_id}`** (owner pubkey base58); **`POST /agents/register`** |
-| MCP | `app/mcp/server.py`: **FastMCP**, stdio (`mcp.run(transport="stdio")`), tools **`verify_intent`**, **`get_credential`**, **`register_agent`** |
-| Тесты | `pytest tests/ -v` — **6 passed** (Python 3.13) |
+| Solana | `solana.py`: PDA **`b"agent"` + owner**, **`b"log"` + owner** (как в IDL on-chain); `register_agent_on_chain(agent_name, max_amount)` с аккаунтами `agent_record`, `intent_log`, `owner`, `system_program`; `log_intent_on_chain`; `fetch_agent_record_for_owner`; **`fetch_intent_log_for_owner`** |
+| IDL | `idl/kya_program.json` — формат, совместимый с **anchorpy_core** (legacy JSON); экспорт Anchor 0.30+ с отдельными discriminators в `anchor export` не парсится без конвертации |
+| API | `POST /agents/register` (тело: agent_name, max_amount); `GET /agents/{agent_id}`; **`GET /agents/{agent_id}/logs`**; `POST /verify-intent` без изменений по цепочке |
+| MCP | `register_agent(agent_name, max_amount)` |
+| Тесты | `pytest -q` — **8 passed**; `pytest.ini`: `-p no:anchorpy` |
 
 ## Запуск MCP
 
-Из каталога **`kya-backend`** (чтобы подтянулся `.env` из `config.py`):
+Из **корня репозитория** (рядом с `app/`, `.env`):
 
 ```bash
 python -m app.mcp.server
 ```
 
-В Cursor: command — тот же `python`, args `-m app.mcp.server`, cwd — `kya-backend`.
-
 ## Зависимости
 
-`requirements.txt`: `solana>=0.34,<0.36`, `anchorpy`, `mcp>=1.0.0`; `pytest.ini`: `-p no:anchorpy`.
+`requirements.txt`: `solana>=0.36`, `solders>=0.21`, `anchorpy>=0.21`, `mcp>=1.0.0`, `google-genai>=1.0.0`.

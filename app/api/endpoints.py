@@ -7,7 +7,14 @@ from solders.pubkey import Pubkey
 
 from app.core.config import Settings, get_settings
 from app.core.deps import get_gemini_service, get_solana_service
-from app.schemas.models import AgentRecordResponse, VerifyIntentRequest, VerifyIntentResponse
+from app.schemas.models import (
+    AgentRecordResponse,
+    IntentLogResponse,
+    RegisterAgentRequest,
+    RegisterAgentResponse,
+    VerifyIntentRequest,
+    VerifyIntentResponse,
+)
 from app.services.gemini import GeminiService
 from app.services.solana import (
     SolanaService,
@@ -103,8 +110,43 @@ async def get_agent(
     return AgentRecordResponse.model_validate(data)
 
 
-@router.post("/agents/register")
+@router.get("/agents/{agent_id}/logs", response_model=IntentLogResponse)
+async def get_agent_logs(
+    agent_id: str,
+    settings: Settings = Depends(get_settings),
+):
+    """`agent_id` — base58 **owner**; читается PDA IntentLog (`log` + owner)."""
+    if not is_program_id_configured(settings):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="KYA_PROGRAM_ID обязателен для чтения из chain",
+        )
+    try:
+        owner_pk = Pubkey.from_string(agent_id.strip())
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Некорректный agent_id (ожидается pubkey owner в base58): {e}",
+        ) from e
+    try:
+        data = await SolanaService.fetch_intent_log_for_owner(settings, owner_pk)
+    except AccountDoesNotExistError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="IntentLog не найден для данного owner",
+        ) from None
+    except Exception as e:
+        logger.exception("fetch_intent_log_for_owner failed")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(e),
+        ) from e
+    return IntentLogResponse.model_validate(data)
+
+
+@router.post("/agents/register", response_model=RegisterAgentResponse)
 async def register_agent(
+    body: RegisterAgentRequest,
     settings: Settings = Depends(get_settings),
     solana: SolanaService = Depends(get_solana_service),
 ):
@@ -114,11 +156,19 @@ async def register_agent(
             detail="KYA_PROGRAM_ID и ключ (SOLANA_PRIVATE_KEY / KYA_KEYPAIR_PATH) обязательны",
         )
     try:
-        sig = await solana.register_agent_on_chain()
+        out = await solana.register_agent_on_chain(
+            agent_name=body.agent_name,
+            max_amount=body.max_amount,
+        )
     except Exception as e:
         logger.exception("register_agent_on_chain failed")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(e),
         ) from e
-    return {"transaction_signature": sig}
+    return RegisterAgentResponse(
+        agent_id=out["agent_id"],
+        pda_address=out["pda_address"],
+        intent_log_address=out["intent_log_address"],
+        transaction_signature=out["transaction_signature"],
+    )

@@ -1,7 +1,7 @@
 """
 MCP-сервер KYA (stdio). Инструменты: verify_intent, get_credential, register_agent.
 
-Запуск из каталога kya-backend:
+Запуск из корня репозитория (где лежит `app/` и `requirements.txt`):
     python -m app.mcp.server
 """
 
@@ -90,9 +90,9 @@ async def get_credential(owner_pubkey: str) -> str:
 
 @mcp.tool(
     name="register_agent",
-    description="Первичная регистрация агента on-chain (registerAgent), подпись из .env.",
+    description="Первичная регистрация агента on-chain (register_agent + agent_name, max_amount), подпись из .env.",
 )
-async def register_agent() -> str:
+async def register_agent(agent_name: str, max_amount: int) -> str:
     settings = get_settings()
     if not is_chain_configured(settings):
         return json.dumps(
@@ -100,10 +100,10 @@ async def register_agent() -> str:
         )
     sol = SolanaService(settings)
     try:
-        sig = await sol.register_agent_on_chain()
+        out = await sol.register_agent_on_chain(agent_name=agent_name, max_amount=max_amount)
     except Exception as e:
         return json.dumps({"error": str(e)})
-    return json.dumps({"transaction_signature": sig}, ensure_ascii=False)
+    return json.dumps(out, ensure_ascii=False)
 
 
 def main() -> None:

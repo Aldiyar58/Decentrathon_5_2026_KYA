@@ -17,9 +17,9 @@ from solders.system_program import ID as SYS_PROGRAM_ID
 
 from app.core.config import Settings
 
-# Согласовано с дизайном (сверка с Человеком 1).
+# Seeds как в IDL (Anchor): agent + owner; log + owner.
 SEED_AGENT = b"agent"
-SEED_INTENT_LOG = b"intent_log"
+SEED_LOG = b"log"
 
 
 def _load_keypair(settings: Settings) -> Keypair:
@@ -54,6 +54,15 @@ def agent_record_account_key(program: Program) -> str:
     raise ValueError("В IDL нет аккаунта AgentRecord")
 
 
+def intent_log_account_key(program: Program) -> str:
+    acc = program.account
+    if "IntentLog" in acc:
+        return "IntentLog"
+    if "kya::IntentLog" in acc:
+        return "kya::IntentLog"
+    raise ValueError("В IDL нет аккаунта IntentLog")
+
+
 def _container_get(data: Container | dict[str, Any], *names: str) -> Any:
     for name in names:
         if isinstance(data, dict):
@@ -85,15 +94,17 @@ def _serialize_agent_record(
 
     tl = _container_get(data, "trust_level", "trustLevel")
     total = _container_get(data, "total_logs", "totalLogs")
-    ver = _container_get(data, "version")
     bump = _container_get(data, "bump")
+    name = _container_get(data, "agent_name", "agentName") or ""
+    max_amt = _container_get(data, "max_amount", "maxAmount")
 
     return {
         "owner": owner_str,
         "agent_record_address": str(agent_pda),
         "trust_level": int(tl) if tl is not None else 0,
+        "agent_name": str(name),
+        "max_amount": int(max_amt) if max_amt is not None else 0,
         "total_logs": int(total) if total is not None else 0,
-        "version": int(ver) if ver is not None else 0,
         "bump": int(bump) if bump is not None else 0,
     }
 
@@ -127,25 +138,38 @@ class SolanaService:
         pid = _program_id(self._settings)
         return Pubkey.find_program_address([SEED_AGENT, bytes(owner)], pid)
 
-    def derive_intent_log_pda(self, agent_record: Pubkey) -> tuple[Pubkey, int]:
+    def derive_intent_log_pda(self, owner: Pubkey) -> tuple[Pubkey, int]:
         pid = _program_id(self._settings)
-        return Pubkey.find_program_address([SEED_INTENT_LOG, bytes(agent_record)], pid)
+        return Pubkey.find_program_address([SEED_LOG, bytes(owner)], pid)
 
-    async def register_agent_on_chain(self) -> str:
+    async def register_agent_on_chain(
+        self,
+        agent_name: str,
+        max_amount: int,
+    ) -> dict[str, Any]:
         program, owner = await self._ensure_program()
-        agent_pda, _ = self.derive_agent_record_pda(owner.pubkey())
+        owner_pk = owner.pubkey()
+        agent_pda, _ = self.derive_agent_record_pda(owner_pk)
+        intent_log_pda, _ = self.derive_intent_log_pda(owner_pk)
         sig = await (
             program.methods["register_agent"]
+            .args([agent_name, max_amount])
             .accounts(
                 {
                     "agent_record": agent_pda,
-                    "owner": owner.pubkey(),
+                    "intent_log": intent_log_pda,
+                    "owner": owner_pk,
                     "system_program": SYS_PROGRAM_ID,
                 }
             )
             .rpc()
         )
-        return str(sig)
+        return {
+            "transaction_signature": str(sig),
+            "agent_id": str(owner_pk),
+            "pda_address": str(agent_pda),
+            "intent_log_address": str(intent_log_pda),
+        }
 
     async def log_intent_on_chain(
         self,
@@ -154,8 +178,9 @@ class SolanaService:
         is_approved: bool,
     ) -> str:
         program, owner = await self._ensure_program()
-        agent_pda, _ = self.derive_agent_record_pda(owner.pubkey())
-        intent_log_pda, _ = self.derive_intent_log_pda(agent_pda)
+        owner_pk = owner.pubkey()
+        agent_pda, _ = self.derive_agent_record_pda(owner_pk)
+        intent_log_pda, _ = self.derive_intent_log_pda(owner_pk)
         decision_str = decision[:512] if decision else ""
         sig = await (
             program.methods["log_intent"]
@@ -164,7 +189,7 @@ class SolanaService:
                 {
                     "agent_record": agent_pda,
                     "intent_log": intent_log_pda,
-                    "owner": owner.pubkey(),
+                    "owner": owner_pk,
                 }
             )
             .rpc()
@@ -202,6 +227,62 @@ class SolanaService:
         key = agent_record_account_key(program)
         raw = await program.account[key].fetch(agent_pda)
         return _serialize_agent_record(raw, agent_pda, owner_pubkey)
+
+    @staticmethod
+    def _intent_log_pda_for_owner(owner_pubkey: Pubkey, program_id: Pubkey) -> Pubkey:
+        pda, _ = Pubkey.find_program_address([SEED_LOG, bytes(owner_pubkey)], program_id)
+        return pda
+
+    @staticmethod
+    def _serialize_intent_entry(entry: Any) -> dict[str, Any]:
+        if isinstance(entry, dict):
+            iid = entry.get("intent_id", entry.get("intentId"))
+            dec = entry.get("decision", "")
+            appr = entry.get("is_approved", entry.get("isApproved"))
+            ts = entry.get("timestamp", entry.get("ts"))
+        else:
+            iid = _container_get(entry, "intent_id", "intentId")
+            dec = _container_get(entry, "decision") or ""
+            appr = _container_get(entry, "is_approved", "isApproved")
+            ts = _container_get(entry, "timestamp")
+        return {
+            "intent_id": int(iid) if iid is not None else 0,
+            "decision": str(dec),
+            "is_approved": bool(appr) if appr is not None else False,
+            "timestamp": int(ts) if ts is not None else 0,
+        }
+
+    @staticmethod
+    async def fetch_intent_log_for_owner(
+        settings: Settings,
+        owner_pubkey: Pubkey,
+    ) -> dict[str, Any]:
+        if not settings.kya_program_id.strip():
+            raise ValueError("KYA_PROGRAM_ID не задан")
+        idl = _load_idl(settings)
+        pid = _program_id(settings)
+        log_pda = SolanaService._intent_log_pda_for_owner(owner_pubkey, pid)
+        conn = AsyncClient(settings.solana_rpc_url, Confirmed)
+        await conn.__aenter__()
+        try:
+            prov = Provider(conn, Wallet.dummy())
+            program = Program(idl, pid, prov)
+            acc_key = intent_log_account_key(program)
+            raw = await program.account[acc_key].fetch(log_pda)
+            logs_raw = _container_get(raw, "logs")
+            if logs_raw is None and hasattr(raw, "logs"):
+                logs_raw = raw.logs
+            entries: list[dict[str, Any]] = []
+            if logs_raw is not None:
+                for item in logs_raw:
+                    entries.append(SolanaService._serialize_intent_entry(item))
+            return {
+                "owner": str(owner_pubkey),
+                "intent_log_address": str(log_pda),
+                "logs": entries,
+            }
+        finally:
+            await conn.__aexit__(None, None, None)
 
     async def close(self) -> None:
         if self._client is not None:

@@ -23,12 +23,38 @@ class VerifyIntentResponse(BaseModel):
         return v
 
 
+class RegisterAgentRequest(BaseModel):
+    agent_name: str = Field(min_length=1, max_length=256)
+    max_amount: int = Field(ge=0, le=2**64 - 1)
+
+
+class RegisterAgentResponse(BaseModel):
+    agent_id: str
+    pda_address: str
+    intent_log_address: str
+    transaction_signature: str
+
+
 class AgentRecordResponse(BaseModel):
-    """Данные on-chain AgentRecord (read-only по owner pubkey)."""
+    """Данные on-chain AgentRecord (чтение PDA через anchorpy)."""
 
     owner: str
     agent_record_address: str
     trust_level: int
+    agent_name: str
+    max_amount: int
     total_logs: int
-    version: int
     bump: int
+
+
+class IntentEntryResponse(BaseModel):
+    intent_id: int
+    decision: str
+    is_approved: bool
+    timestamp: int
+
+
+class IntentLogResponse(BaseModel):
+    owner: str
+    intent_log_address: str
+    logs: list[IntentEntryResponse]
