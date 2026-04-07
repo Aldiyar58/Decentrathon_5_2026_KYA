@@ -4,6 +4,17 @@ from pydantic import BaseModel, Field, field_validator
 class VerifyIntentRequest(BaseModel):
     intent_text: str = Field(min_length=1)
     context_json: str | None = None
+    amount: int = Field(default=0, ge=0, le=2**64 - 1)
+    destination: str | None = Field(
+        default=None,
+        description="Base58 pubkey; по умолчанию — pubkey owner из .env",
+    )
+    intent_id: int | None = Field(
+        default=None,
+        ge=0,
+        le=2**64 - 1,
+        description="Если не задан, на chain берётся total_logs + 1",
+    )
 
 
 class VerifyIntentResponse(BaseModel):
@@ -26,12 +37,16 @@ class VerifyIntentResponse(BaseModel):
 class RegisterAgentRequest(BaseModel):
     agent_name: str = Field(min_length=1, max_length=256)
     max_amount: int = Field(ge=0, le=2**64 - 1)
+    logger_authority: str | None = Field(
+        default=None,
+        description="Base58 pubkey для поля on-chain; по умолчанию — из KYA_LOGGER_AUTHORITY или signer",
+    )
 
 
 class RegisterAgentResponse(BaseModel):
     agent_id: str
     pda_address: str
-    intent_log_address: str
+    logger_authority: str
     transaction_signature: str
 
 
@@ -39,22 +54,33 @@ class AgentRecordResponse(BaseModel):
     """Данные on-chain AgentRecord (чтение PDA через anchorpy)."""
 
     owner: str
+    logger_authority: str
     agent_record_address: str
-    trust_level: int
+    trust_level: int = Field(ge=0, le=255)
     agent_name: str
     max_amount: int
     total_logs: int
+    is_active: bool
+    created_at: int
+    last_updated: int
     bump: int
 
 
-class IntentEntryResponse(BaseModel):
+class IntentRecordItemResponse(BaseModel):
     intent_id: int
     decision: str
-    is_approved: bool
+    decision_code: int = Field(ge=0, le=255)
+    reasoning: str
+    amount: int
+    destination: str
     timestamp: int
+    intent_record_address: str
 
 
-class IntentLogResponse(BaseModel):
+class AgentIntentLogsResponse(BaseModel):
+    """Последние записи IntentRecord; id перебираются от total_logs вниз (см. heuristic в SolanaService)."""
+
     owner: str
-    intent_log_address: str
-    logs: list[IntentEntryResponse]
+    agent_record_address: str
+    total_logs: int
+    logs: list[IntentRecordItemResponse]

@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     kya_idl_path: str = Field(
         default_factory=lambda: str(_BACKEND_ROOT / "idl" / "kya_program.json"),
     )
+    # Logger authority: если не задан отдельный ключ — используется owner (SOLANA_PRIVATE_KEY / KYA_KEYPAIR_PATH).
+    kya_logger_authority: str = ""
+    kya_logger_private_key: str = ""
+    kya_logger_keypair_path: str | None = None
 
 
 @lru_cache

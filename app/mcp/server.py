@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import secrets
 
 from mcp.server.fastmcp import FastMCP
 from solders.pubkey import Pubkey
@@ -18,6 +17,7 @@ from app.core.config import get_settings
 from app.services.gemini import GeminiService
 from app.services.solana import (
     SolanaService,
+    gemini_decision_to_u8,
     is_chain_configured,
     is_program_id_configured,
 )
@@ -33,12 +33,14 @@ mcp = FastMCP(
 
 @mcp.tool(
     name="verify_intent",
-    description="Анализ интента через Gemini; при настроенном chain — logIntent на Solana.",
+    description="Анализ интента через Gemini; при настроенном chain — log_intent на Solana (u8 decision + reasoning + amount + destination).",
 )
 async def verify_intent(
     intent_text: str,
     context_json: str | None = None,
     record_on_chain: bool = True,
+    amount: int = 0,
+    destination: str | None = None,
 ) -> str:
     settings = get_settings()
     if not settings.gemini_api_key.strip():
@@ -52,12 +54,20 @@ async def verify_intent(
 
     out = result.model_dump()
     if record_on_chain and is_chain_configured(settings):
+        dest: Pubkey | None = None
+        if destination and destination.strip():
+            try:
+                dest = Pubkey.from_string(destination.strip())
+            except Exception as e:
+                return json.dumps({"error": f"Некорректный destination: {e}"})
         sol = SolanaService(settings)
         try:
             sig = await sol.log_intent_on_chain(
-                intent_id=secrets.randbelow(2**64),
-                decision=result.decision,
-                is_approved=result.decision == "approve",
+                intent_id=None,
+                decision_u8=gemini_decision_to_u8(result.decision),
+                reasoning=result.reasoning,
+                amount=amount,
+                destination=dest,
             )
             out["intent_log_signature"] = sig
         except Exception as e:
@@ -71,7 +81,7 @@ async def verify_intent(
 
 @mcp.tool(
     name="get_credential",
-    description="Данные AgentRecord (trust_level и др.) по owner pubkey (base58).",
+    description="Данные AgentRecord по owner pubkey (base58).",
 )
 async def get_credential(owner_pubkey: str) -> str:
     settings = get_settings()
@@ -90,9 +100,13 @@ async def get_credential(owner_pubkey: str) -> str:
 
 @mcp.tool(
     name="register_agent",
-    description="Первичная регистрация агента on-chain (register_agent + agent_name, max_amount), подпись из .env.",
+    description="Регистрация агента: agent_name, max_amount; logger_authority опционально (base58).",
 )
-async def register_agent(agent_name: str, max_amount: int) -> str:
+async def register_agent(
+    agent_name: str,
+    max_amount: int,
+    logger_authority: str | None = None,
+) -> str:
     settings = get_settings()
     if not is_chain_configured(settings):
         return json.dumps(
@@ -100,7 +114,12 @@ async def register_agent(agent_name: str, max_amount: int) -> str:
         )
     sol = SolanaService(settings)
     try:
-        out = await sol.register_agent_on_chain(agent_name=agent_name, max_amount=max_amount)
+        logger_pk = sol.resolve_register_logger_authority(logger_authority)
+        out = await sol.register_agent_on_chain(
+            agent_name=agent_name,
+            max_amount=max_amount,
+            logger_authority=logger_pk,
+        )
     except Exception as e:
         return json.dumps({"error": str(e)})
     return json.dumps(out, ensure_ascii=False)

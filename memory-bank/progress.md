@@ -4,20 +4,15 @@
 
 | Area | Status |
 |------|--------|
-| Solana | `solana.py`: PDA **`b"agent"` + owner**, **`b"log"` + owner** (как в IDL on-chain); `register_agent_on_chain(agent_name, max_amount)` с аккаунтами `agent_record`, `intent_log`, `owner`, `system_program`; `log_intent_on_chain`; `fetch_agent_record_for_owner`; **`fetch_intent_log_for_owner`** |
-| IDL | `idl/kya_program.json` — формат, совместимый с **anchorpy_core** (legacy JSON); экспорт Anchor 0.30+ с отдельными discriminators в `anchor export` не парсится без конвертации |
-| API | `POST /agents/register` (тело: agent_name, max_amount); `GET /agents/{agent_id}`; **`GET /agents/{agent_id}/logs`**; `POST /verify-intent` без изменений по цепочке |
-| MCP | `register_agent(agent_name, max_amount)` |
-| Тесты | `pytest -q` — **8 passed**; `pytest.ini`: `-p no:anchorpy` |
+| IDL | **`idl/kya_program.json`** — legacy для **anchorpy**; экспорт Anchor 0.30+ лежит в **`idl/kya_program.anchor030.json`** |
+| Solana | **register_agent**: `agent_name`, `max_amount`, `logger_authority`; без `intent_log`. **log_intent**: PDA **`intent` + agent_record + intent_id (u64 LE)**; args **u8 decision**, reasoning, amount, destination; подпись **logger_authority** (отдельный ключ в `.env` или тот же, что owner) |
+| API | **POST /verify-intent** — маппинг Gemini → u8; **POST /agents/register** — опциональный `logger_authority` в теле; **GET /agents/{id}/logs** — до 20 **IntentRecord**, перебор id от `total_logs` вниз |
+| Настройки | `KYA_LOGGER_AUTHORITY`, `KYA_LOGGER_PRIVATE_KEY`, `KYA_LOGGER_KEYPAIR_PATH` (опционально) |
 
 ## Запуск MCP
 
-Из **корня репозитория** (рядом с `app/`, `.env`):
+Из **корня репозитория**: `python -m app.mcp.server`
 
-```bash
-python -m app.mcp.server
-```
+## Тесты
 
-## Зависимости
-
-`requirements.txt`: `solana>=0.36`, `solders>=0.21`, `anchorpy>=0.21`, `mcp>=1.0.0`, `google-genai>=1.0.0`.
+`pytest -q` — **8 passed**; `pytest.ini`: `-p no:anchorpy`.

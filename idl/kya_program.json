@@ -6,29 +6,41 @@
   },
   "instructions": [
     {
-      "name": "register_agent",
+      "name": "deactivate_agent",
       "accounts": [
         {"name": "agent_record", "isMut": true, "isSigner": false},
-        {"name": "intent_log", "isMut": true, "isSigner": false},
-        {"name": "owner", "isMut": true, "isSigner": true},
-        {"name": "system_program", "isMut": false, "isSigner": false}
+        {"name": "owner", "isMut": false, "isSigner": true}
       ],
-      "args": [
-        {"name": "agent_name", "type": "string"},
-        {"name": "max_amount", "type": "u64"}
-      ]
+      "args": []
     },
     {
       "name": "log_intent",
       "accounts": [
         {"name": "agent_record", "isMut": true, "isSigner": false},
-        {"name": "intent_log", "isMut": true, "isSigner": false},
-        {"name": "owner", "isMut": true, "isSigner": true}
+        {"name": "intent_record", "isMut": true, "isSigner": false},
+        {"name": "owner", "isMut": false, "isSigner": false},
+        {"name": "logger_authority", "isMut": true, "isSigner": true},
+        {"name": "system_program", "isMut": false, "isSigner": false}
       ],
       "args": [
         {"name": "intent_id", "type": "u64"},
-        {"name": "decision", "type": "string"},
-        {"name": "is_approved", "type": "bool"}
+        {"name": "decision", "type": "u8"},
+        {"name": "reasoning", "type": "string"},
+        {"name": "amount", "type": "u64"},
+        {"name": "destination", "type": "publicKey"}
+      ]
+    },
+    {
+      "name": "register_agent",
+      "accounts": [
+        {"name": "agent_record", "isMut": true, "isSigner": false},
+        {"name": "owner", "isMut": true, "isSigner": true},
+        {"name": "system_program", "isMut": false, "isSigner": false}
+      ],
+      "args": [
+        {"name": "agent_name", "type": "string"},
+        {"name": "max_amount", "type": "u64"},
+        {"name": "logger_authority", "type": "publicKey"}
       ]
     }
   ],
@@ -39,36 +51,33 @@
         "kind": "struct",
         "fields": [
           {"name": "owner", "type": "publicKey"},
-          {"name": "trust_level", "type": "u64"},
+          {"name": "logger_authority", "type": "publicKey"},
           {"name": "agent_name", "type": "string"},
           {"name": "max_amount", "type": "u64"},
+          {"name": "trust_level", "type": "u8"},
           {"name": "total_logs", "type": "u64"},
+          {"name": "is_active", "type": "bool"},
+          {"name": "created_at", "type": "i64"},
+          {"name": "last_updated", "type": "i64"},
           {"name": "bump", "type": "u8"}
         ]
       }
     },
     {
-      "name": "IntentLog",
+      "name": "IntentRecord",
       "type": {
         "kind": "struct",
         "fields": [
-          {"name": "logs", "type": {"vec": {"defined": "IntentEntry"}}}
-        ]
-      }
-    }
-  ],
-  "types": [
-    {
-      "name": "IntentEntry",
-      "type": {
-        "kind": "struct",
-        "fields": [
+          {"name": "agent", "type": "publicKey"},
           {"name": "intent_id", "type": "u64"},
-          {"name": "decision", "type": "string"},
-          {"name": "is_approved", "type": "bool"},
+          {"name": "decision", "type": "u8"},
+          {"name": "reasoning", "type": "string"},
+          {"name": "amount", "type": "u64"},
+          {"name": "destination", "type": "publicKey"},
           {"name": "timestamp", "type": "i64"}
         ]
       }
     }
-  ]
+  ],
+  "types": []
 }
