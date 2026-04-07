@@ -28,6 +28,16 @@ class Settings(BaseSettings):
     kya_logger_private_key: str = ""
     kya_logger_keypair_path: str | None = None
 
+    # HTTP MCP (SSE): список ключей через запятую или `;`. Пусто — все запросы к /mcp/* отклоняются (401).
+    kya_mcp_api_keys: str = ""
+
+    # Eliza: базовый URL REST (например http://localhost:3000). Пусто — spawn пропускается с ошибкой в ответе.
+    eliza_api_url: str = ""
+    eliza_api_key: str = ""
+    # URL SSE MCP для встраивания в character Eliza; ключ, который Eliza передаёт в заголовке X-API-KEY к KYA MCP.
+    kya_mcp_sse_url: str = ""
+    kya_mcp_api_key: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

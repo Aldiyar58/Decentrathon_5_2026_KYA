@@ -1,4 +1,9 @@
-"""anchorpy: программа KYA по IDL `idl/kya_program.json` (legacy JSON для anchorpy_core)."""
+"""anchorpy: KYA по legacy IDL `idl/kya_program.json`.
+
+Логи: отдельный аккаунт IntentRecord на интент; PDA [b\"intent\", agent_pda, intent_id u64 LE].
+Решение на chain — u8: 0=Approve, 1=Reject, 2=Escalate (таблица в memory-bank/progress.md).
+log_intent подписывает logger_authority (см. Settings KYA_LOGGER_*).
+"""
 
 from __future__ import annotations
 
@@ -28,6 +33,7 @@ DECISION_ESCALATE_U8 = 2
 
 
 def gemini_decision_to_u8(decision: str) -> int:
+    """Строка от Gemini -> u8 для инструкции log_intent: approve->0, reject->1, escalate->2."""
     return {
         "approve": DECISION_APPROVE_U8,
         "reject": DECISION_REJECT_U8,
@@ -36,6 +42,7 @@ def gemini_decision_to_u8(decision: str) -> int:
 
 
 def decision_u8_to_label(code: int) -> str:
+    """Обратное отображение u8 -> метка API (0/1/2 иначе unknown)."""
     return {
         DECISION_APPROVE_U8: "approve",
         DECISION_REJECT_U8: "reject",

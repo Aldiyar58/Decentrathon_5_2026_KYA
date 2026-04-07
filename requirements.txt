@@ -14,8 +14,9 @@ solana>=0.36.0
 solders>=0.21.0
 anchorpy>=0.21.0
 
-# MCP (day 3)
+# MCP (stdio + HTTP/SSE)
 mcp>=1.0.0
+sse-starlette>=2.0.0,<3.0.0
 
 # Tests
 pytest>=8.0.0

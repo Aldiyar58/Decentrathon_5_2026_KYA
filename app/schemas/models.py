@@ -4,6 +4,10 @@ from pydantic import BaseModel, Field, field_validator
 class VerifyIntentRequest(BaseModel):
     intent_text: str = Field(min_length=1)
     context_json: str | None = None
+    agent_id: str | None = Field(
+        default=None,
+        description="Owner pubkey (base58); подставляет миссию из регистрации для сверки в Gemini",
+    )
     amount: int = Field(default=0, ge=0, le=2**64 - 1)
     destination: str | None = Field(
         default=None,
@@ -37,11 +41,25 @@ class VerifyIntentResponse(BaseModel):
 class RegisterAgentRequest(BaseModel):
     agent_name: str = Field(min_length=1, max_length=256)
     max_amount: int = Field(ge=0, le=2**64 - 1)
-    description: str = Field(min_length=1, max_length=1000)
+    description: str | None = Field(
+        default=None,
+        max_length=1000,
+        description="Необязательно; при наличии — миссия агента, spawn Eliza, хранение для verify-intent",
+    )
     logger_authority: str | None = Field(
         default=None,
         description="Base58 pubkey для поля on-chain; по умолчанию — из KYA_LOGGER_AUTHORITY или signer",
     )
+
+    @field_validator("description", mode="before")
+    @classmethod
+    def normalize_description(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            return s if s else None
+        return str(v).strip() or None
 
 
 class RegisterAgentResponse(BaseModel):
@@ -49,6 +67,12 @@ class RegisterAgentResponse(BaseModel):
     pda_address: str
     logger_authority: str
     transaction_signature: str
+    eliza_status: str | None = Field(
+        default=None,
+        description="skipped | ok | error",
+    )
+    eliza_agent_id: str | None = None
+    eliza_error: str | None = None
 
 
 class AgentRecordResponse(BaseModel):

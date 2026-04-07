@@ -1,238 +1,177 @@
 # Memory Bank: Tasks — KYA Backend
 
-## Complexity determination
+## Статус workflow
+
+| Фаза | Состояние |
+|------|------------|
+| VAN / PLAN / CREATIVE / BUILD / REFLECT / **ARCHIVE** | **COMPLETE** → **Phase 6** заархивирована |
+| **Phase 7: Eliza Agent Integration** | **BUILD** — реализовано: `ElizaManager`, mission store, API/MCP/Gemini; следующий шаг: `/reflect` |
+| **ARCHIVE (2026-04 backend)** | [archive-kya-backend-2026-04.md](archive/archive-kya-backend-2026-04.md) |
+| **ARCHIVE (Phase 6 MCP SSE)** | [archive-phase6-cloud-mcp-sse.md](archive/archive-phase6-cloud-mcp-sse.md) |
+
+## Текущая задача: Phase 7 — Eliza Agent Integration
+
+### Description
+
+Автоматический запуск **временных** ИИ-агентов на базе **Eliza (ElizaOS)** после успешной on-chain регистрации в KYA: расширение API, сервис `ElizaManager`, встраивание MCP KYA (HTTP/SSE) в конфиг персонажа, проверка соответствия интента изначальной инструкции через Gemini, жизненный цикл остановки, секреты только из `.env`.
+
+### Complexity
 
 | Field | Value |
 |--------|--------|
-| **Level** | **3** |
-| **Workflow** | VAN → PLAN → CREATIVE → BUILD → REFLECT |
+| **Level** | **3** (feature: внешний рантайм + новый доменный поток + изменение политики верификации) |
+| **Type** | Feature / Integration |
 
-## Структура репозитория (PLAN — уплощение вложенности)
+### Technology Stack
 
-Код бэкенда перенесён в **`kya-backend/`** (один уровень вместо `backend/fastapi/...`).
+| Слой | Выбор |
+|------|--------|
+| Backend | Существующий FastAPI (`app/`) |
+| Solana | Текущий `SolanaService.register_agent_on_chain` (без изменения Anchor-аргументов, если программа не расширяется) |
+| LLM | Gemini (`GeminiService`) — отдельный режим/промпт для **alignment** интента с миссией |
+| Eliza | ElizaOS REST (локально типично порт **3000**): создание агента (`characterJson` / `characterPath`) + **start**; точные пути — сверить с версией Eliza ([REST reference](https://docs.elizaos.ai/rest-reference)) на этапе BUILD |
+| HTTP-клиент | `httpx` (async), таймауты и явные ошибки |
+| Хранение миссии | v1: in-process `dict[agent_id, mission]` + абстракция интерфейса под будущий Redis/БД (multi-instance) |
 
-### Решения, расходящиеся с черновиком пользователя
+### Технология — чекпоинты валидации (перед/в начале BUILD)
 
-| Вопрос | Решение |
-|--------|---------|
-| **`memory-bank/` внутри `kya-backend/`** | **Нет:** по правилам workspace Memory Bank только в **`memory-bank/` у корня репозитория** (`KYA-Solana/memory-bank/`). |
-| **`services/claude.py` + Anthropic** | **Нет:** стек — **Gemini**, файл **`app/services/gemini.py`**. |
-| **Node внутри `app/`** | **Да:** `kya-backend/app/node/` (как просили). |
+- [ ] Поднять Eliza локально, зафиксировать базовый URL и префикс API (`/api/...` vs `/agents/...`) из ответа сервера или документации версии.
+- [ ] `curl`/интеграционный тест: **POST** создать агента с минимальным `characterJson`, затем **start**, убедиться в статусе `active`.
+- [ ] Проверить, как в выбранной версии Eliza задаётся **MCP client**: URL SSE (`KYA_MCP_SSE_URL`) и заголовок **`X-API-KEY`** (значение из доверенного ключа KYA, не хардкод).
+- [ ] `requirements.txt`: добавить `httpx` (если ещё нет).
 
-### Целевое дерево
+### Статус Phase 7
 
-```
-KYA-Solana/
-├── memory-bank/                 # только здесь (правила Cursor)
-├── kya-backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI, include_router
-│   │   ├── core/
-│   │   │   ├── config.py        # Pydantic Settings, .env рядом с kya-backend
-│   │   │   └── deps.py          # get_gemini_service
-│   │   ├── api/
-│   │   │   └── endpoints.py     # /health, POST /verify-intent, POST /agents/register
-│   │   ├── services/
-│   │   │   ├── gemini.py        # Google GenAI (BUILD)
-│   │   │   └── solana.py        # anchorpy (BUILD)
-│   │   ├── schemas/
-│   │   │   └── models.py        # Pydantic Request/Response
-│   │   ├── mcp/
-│   │   │   └── server.py        # MCP entry (день 3)
-│   │   └── node/                # опциональный Node gateway
-│   │       ├── package.json
-│   │       └── src/server.js
-│   ├── idl/
-│   │   └── kya_program.json     # заменить IDL от Человека 1
-│   ├── .env                     # локально (не в git); шаблон — .env.example
-│   ├── .env.example
-│   └── requirements.txt
-├── programs/kya-decisions/      # Anchor (Rust), без изменений в этом PLAN
-```
-
-### Запуск
-
-- Из каталога **`kya-backend`**: `uvicorn app.main:app --reload`
-- Установка зависимостей: `pip install -r kya-backend/requirements.txt` (в venv проекта).
+- [x] Initialization / постановка цели (из запроса пользователя)
+- [x] Planning complete (`/plan`)
+- [x] Technology validation complete (smoke вручную при наличии Eliza; контракт HTTP — `POST …/agents/{id}/set`)
+- [x] Implementation complete
+- [x] Tests / `.env.example` — `pytest` 17 passed; переменные Eliza/MCP в примере env
 
 ---
 
-## Стек
+## Implementation Plan — Phase 7
 
-| Слой | Технология |
-|------|------------|
-| HTTP | **FastAPI** |
-| LLM | **Google Gemini** (`google-genai`), `app/services/gemini.py` |
-| Chain | **anchorpy**, `app/services/solana.py` |
-| Схемы | **`app/schemas/models.py`** |
-| MCP | **`app/mcp/server.py`** |
-| Node | **`app/node/`** (опционально) |
+### 1. API: `POST /agents/register` и схема
 
----
+**Контекст:** в `RegisterAgentRequest` уже есть поле `description`, но оно **обязательное** и **не используется** при вызове `register_agent_on_chain` (в chain уходят только `agent_name`, `max_amount`, `logger_authority`).
 
-## Дизайн CREATIVE
+**План:**
 
-**Документ:** `memory-bank/creative/gemini_design.md` — промпт, секреты, MCP tools. В API ответа verify поле риска: **`risk_level`** (int 0–100), синхронно со схемой Gemini.
+1. Сделать **`description` необязательным** (`str | None`, при передаче — те же ограничения длины `1..1000`).
+2. После успешного `register_agent_on_chain`:
+   - если `description` пустой/`None` — ответ как сейчас (без Eliza);
+   - если задан — вызвать **`ElizaManager.spawn_after_register(agent_name=..., description=..., agent_id=...)`** (см. ниже), ошибки Eliza оформить явно (502/503 + лог), не откатывая Solana-транзакцию (уже в блокчейне).
+3. Расширить **`RegisterAgentResponse`** опциональными полями, например: `eliza_agent_id: str | None`, `eliza_error: str | None` — чтобы клиент видел результат spawn без обязательной зависимости от Eliza.
 
----
+**MCP tool `register_agent`:** добавить опциональный параметр `description` в сигнатуру tool и прокинуть в ту же логику (общий хелпер из `mcp_tool_handlers` / сервис).
 
-## Архитектура (слои)
+### 2. Сервис `ElizaManager` (`app/services/eliza_manager.py`)
 
-**Целевая (после BUILD этой задачи):** `endpoints.py` → **`repositories`** (локальная БД) + **`services`** (Gemini, Solana/anchorpy + **solders**) → SDK/RPC. `mcp/server.py` — синхронизация с теми же сервисами/схемами по возможности.
+**Ответственность:**
 
----
+| Метод / блок | Поведение |
+|--------------|-----------|
+| `build_character_json(name, description, settings)` | Собрать объект персонажа ElizaOS: **`bio`** — краткая выжимка из `description` (можно дублировать или разбить на массив строк по правилам Eliza); **`knowledge`** — структурированные записи вида «Миссия агента: …» / bullet из `description`. |
+| MCP в персонаже | Встроить в `settings` (или поля плагина MCP Eliza — **уточнить в CREATIVE/BUILD по фактической схеме**) URL **`settings.kya_mcp_sse_url`** (не хардкод `localhost` в проде) и секрет для клиента: либо выделенный **`KYA_ELIZA_MCP_API_KEY`** (рекомендуется: отдельный ключ из `KYA_MCP_API_KEYS` или отдельная env-переменная), либо согласованное имя заголовка `X-API-KEY`. |
+| `register_mission(agent_id, description)` | Сохранить соответствие **`agent_id`** (owner pubkey base58 из ответа регистрации) → исходная инструкция для последующих вызовов `verify_intent`. |
+| `create_and_start(name, character_dict)` | **HTTP POST** к Eliza API: создать агента с `characterJson`, затем **start**; вернуть id инстанса Eliza. |
+| `stop(agent_eliza_id)` | Вызов API остановки/удаления (конкретный маршрут — по доке версии Eliza: `stop`, `DELETE`, и т.д.). |
 
-## Аудит эндпоинтов (текущее vs требуемое)
+**Зависимости:** `Settings` с новыми полями (см. §6), `httpx.AsyncClient`.
 
-| Сейчас | Требование | Зазор |
-|--------|------------|--------|
-| `POST /verify-intent` | `POST /agents/verify-intent` + сохранение копии в БД + ответ с **trust_level** после chain | Новый путь (старый оставить **deprecated** или 307 — на BUILD), добавить **IntentRepository**, после `logIntent` — **refetch AgentRecord** |
-| `POST /agents/register` без тела | Тело: `owner_pubkey`, `agent_name`, `max_amount`; ответ: `agent_id`, `pda_address`, `tx_signature` | Pydantic request/response; **PDA** и **tx** из `SolanaService`; метаданные **только в БД** (см. IDL) |
-| `GET /agents/{agent_id}` | «Полные данные агента» | Слияние **chain** (`AgentRecord`) + **DB** (`agent_name`, `max_amount`, timestamps) |
-| — | `GET /agents/{agent_id}/logs` | Новый: чтение **IntentLog** PDA через anchorpy, сериализация `vec<IntentItem>` |
-| — | `GET /intents/recent` | Новый: последние **20** записей из БД через **IntentRepository** |
+### 3. Цепочка верификации: Gemini и `verify_intent_handler`
 
-### Разрыв с on-chain IDL (`idl/kya_program.json`)
+**Цель:** при проверке интента учитывать **изначальную инструкцию** регистрации: *«Соответствует ли текущее действие агента (intent) его изначальной инструкции (description)?»*
 
-- **`registerAgent`**: `args: []` — на чейне **нет** `agent_name` / `max_amount`. План: хранить их **только в локальной БД** после успешной транзакции; при расширении программы — обновить IDL и `SolanaService`.
-- **`owner_pubkey` в теле register**: подписант — ключ из `.env`. Валидация: **`Pubkey.from_string(owner_pubkey)` == `Keypair.pubkey()`** иначе **400** (без смены программы нельзя регистрировать «чужого» owner тем же signer).
-- **`agent_id`**: единая семантика — **base58 owner pubkey** (как сейчас в `GET /agents/{agent_id}`); `pda_address` — отдельное поле в ответах.
+**План:**
 
----
+1. **Хранилище миссии:** при успешном spawn (или просто при `register` с непустым `description`, даже если Eliza временно недоступна — решение в CREATIVE: «только после Eliza» vs «всегда сохранять миссию») записать `agent_id → description` в реестр (v1 in-memory).
+2. **Расширить вход verify:**
+   - **HTTP `POST /verify-intent`:** опциональное поле `agent_id: str | None` (owner pubkey). Если задано — подгрузить сохранённую миссию; если миссии нет — не ломать контракт: работать как сейчас (только общий промпт) или вернуть `escalate` с пояснением (выбрать в CREATIVE).
+   - **MCP `verify_intent`:** опциональный параметр `agent_id` (или передача через `context_json` с зарезервированным ключом — менее удобно).
+3. **Gemini:** добавить отдельный **system instruction** (или второй шаг — нежелательно для латентности) для режима *alignment*: в user content передавать блоки **Original agent mission (registration description)** и **Current intent to evaluate**, плюс существующий `context_json`. Схема ответа — текущая `VerifyIntentResponse` (`approve` / `reject` / `escalate`, `reasoning`, `risk_level`), с формулировкой в промпте, что `reject`/`escalate` допустимы при несоответствии миссии.
+4. Реализация в коде: либо `GeminiService.verify_intent(..., registration_mission: str | None)`, либо метод `verify_intent_with_mission(...)` — избежать дублирования парсинга ответа.
 
-## Подтверждённая структура каталогов (факт + добавления)
+### 4. Жизненный цикл остановки агента
 
-```
-KYA-Solana/
-├── requirements.txt
-├── idl/kya_program.json
-├── .env / .env.example
-├── memory-bank/
-└── app/
-    ├── main.py
-    ├── api/
-    │   └── endpoints.py
-    ├── core/
-    │   ├── config.py          # + DATABASE_URL (sqlite по умолчанию)
-    │   └── deps.py            # + get_db_session, get_*_repository
-    ├── db/
-    │   ├── __init__.py
-    │   ├── base.py            # async engine, sessionmaker, init_db / create_all
-    │   └── models.py          # SQLAlchemy 2.0: AgentRow, IntentCopyRow
-    ├── repositories/
-    │   ├── __init__.py
-    │   ├── agent_repository.py
-    │   └── intent_repository.py
-    ├── schemas/
-    │   └── models.py          # все request/response Pydantic
-    ├── services/
-    │   ├── gemini.py
-    │   └── solana.py          # + fetch_intent_log_for_owner; хелпер intent_log_account_key
-    └── mcp/
-        └── server.py          # по желанию: те же схемы/вызовы после стабилизации API
-```
+**Варианты (можно комбинировать):**
 
-**Зависимости (BUILD):** `sqlalchemy[asyncio]`, `aiosqlite` (или один драйвер async для SQLite), версии **solana ≥ 0.36**, **solders**, **anchorpy ≥ 0.21** без изменения паттерна RPC.
+| Механизм | Описание |
+|----------|----------|
+| **A. Явный API KYA** | `POST /agents/{agent_id}/eliza/stop` (или `/agents/{agent_id}/eliza` DELETE): аутентификация тем же API key, что и остальной админ-функционал (если появится) или существующий механизм; вызов `ElizaManager.stop` + удаление записи миссии из реестра. |
+| **B. Связь с Solana `max_amount`** | При операциях, которые меняют лимит/статус агента on-chain, или по **периодическому опросу** `AgentRecord` (дорого) / событию из внешнего индексатора — при «исчерпании лимита» или `is_active == false` вызывать stop. Для v1 достаточно зафиксировать в коде хук «после чтения записи агента» в отдельном джобе или в эндпоинте stop. |
+| **C. TTL** | Опциональный параметр регистрации `eliza_ttl_seconds` — отложенная задача (APScheduler / фоновая корутина) для stop; усложняет прод без общего планировщика. |
 
----
+**Рекомендация плана:** v1 — **A** (явный stop) + документировать **B** как follow-up при появлении индексатора.
 
-## План реализации (Level 3, фазы)
+### 5. Безопасность и `.env`
 
-### Фаза 0 — Соглашения
+Добавить в **`Settings`** и **`.env.example`** (без секретов в репозитории):
 
-- [ ] Зафиксировать **`agent_id` = owner base58** в OpenAPI-описаниях.
-- [ ] Таблица **agents**: `owner_pubkey` (PK/unique), `agent_name`, `max_amount`, `pda_address`, `last_register_tx`, `created_at`, `updated_at`.
-- [ ] Таблица **intent_copies**: `id`, `owner_pubkey` (FK/индекс), `intent_text`, `context_json` (nullable), `decision`, `risk_level`, `is_approved`, `intent_id_on_chain` (u64), `tx_signature`, `trust_level_after` (snapshot), `created_at`.
+| Переменная | Назначение |
+|------------|------------|
+| `ELIZA_API_BASE_URL` | Базовый URL Eliza REST, например `http://localhost:3000` |
+| `ELIZA_API_KEY` | Если Eliza защищена API key / Bearer — иначе пусто |
+| `KYA_MCP_SSE_URL` | Публичный URL SSE MCP для вставки в character (в dev `http://localhost:8000/mcp/sse`, в проде — реальный хост) |
+| `KYA_ELIZA_MCP_API_KEY` | Ключ, которым Eliza будет ходить в KYA MCP (**отдельный** от ключей оператора, принцип least privilege; может совпадать с одним из `KYA_MCP_API_KEYS` только осознанно) |
 
-### Фаза 1 — DB + Repository
+Существующий **`KYA_MCP_API_KEYS`** остаётся источником валидации входящих запросов к `/mcp/*`.
 
-- [ ] `app/db/base.py`: `create_async_engine`, `async_sessionmaker`, lifespan в `main.py` или startup event — `create_all`.
-- [ ] `app/db/models.py`: модели под таблицы выше.
-- [ ] `AgentRepository`: `upsert_after_register`, `get_by_owner_pubkey`.
-- [ ] `IntentRepository`: `create_from_verify_flow`, `list_recent(limit=20)` с сортировкой по `created_at` DESC.
-- [ ] `get_settings().database_url` default `sqlite+aiosqlite:///./kya.db` (путь от корня проекта или через env).
+### 6. Тестирование
 
-### Фаза 2 — SolanaService (solders + anchorpy 0.36)
+- Unit: генерация `character_json` (снапшот структуры без секретов или с редоктом ключа).
+- Мок `httpx`: успешный create+start, ошибка Eliza.
+- API: регистрация с/без `description`; при моке Eliza — проверка полей ответа.
+- `verify-intent` с `agent_id` и предзаполненной миссией — мок Gemini с проверкой, что в запрос попали mission + intent.
 
-- [ ] `intent_log_account_key(program)` — аналог `agent_record_account_key` для **`kya::IntentLog`** / `IntentLog`.
-- [ ] `fetch_intent_log_for_owner(settings, owner_pubkey) -> list[dict]` — PDA intent log, `program.account[...].fetch`, нормализация полей `IntentItem` (intentId, decision, isApproved, timestamp) в JSON-совместимые типы.
-- [ ] `register_agent_on_chain` без смены IDL; опционально возвращать `(signature, agent_pda)` чтобы не дублировать derive в роутере.
-- [ ] После `log_intent_on_chain`: публичный метод **`fetch_agent_record_after_log`** или повторное использование `fetch_agent_record_for_owner` / `_fetch_agent_record` для **trust_level** в ответе verify.
+### 7. Зависимости и риски
 
-### Фаза 3 — Pydantic (`app/schemas/models.py`)
-
-- [ ] `RegisterAgentRequest` / `RegisterAgentResponse`.
-- [ ] `VerifyAgentIntentRequest` (как текущий verify + при необходимости `owner_pubkey` если verify привязывается к агенту — по умолчанию signer wallet = owner).
-- [ ] `VerifyAgentIntentResponse` — поля Gemini + `intent_log_signature`, **`trust_level`**, опционально `total_logs`.
-- [ ] `AgentFullResponse` — chain + DB поля.
-- [ ] `IntentItemResponse`, `IntentLogListResponse`.
-- [ ] `RecentIntentRow` / `RecentIntentsResponse` для `/intents/recent`.
-
-### Фаза 4 — HTTP (`app/api/endpoints.py`)
-
-- [ ] `POST /agents/register` — тело, валидация owner = signer, `SolanaService.register`, `AgentRepository.upsert`, ответ с **agent_id**, **pda_address**, **tx_signature**.
-- [ ] `POST /agents/verify-intent` — Gemini → при наличии chain `log_intent` → **IntentRepository.create** → refetch **trust_level**; ответ расширенный.
-- [ ] `GET /agents/{agent_id}` — `AgentRepository.get` + `fetch_agent_record`; **404** если нет записи on-chain (или согласовать: только DB — зафиксировать в BUILD).
-- [ ] `GET /agents/{agent_id}/logs` — `SolanaService.fetch_intent_log_for_owner`.
-- [ ] `GET /intents/recent` — `IntentRepository.list_recent(20)`.
-- [ ] `POST /verify-intent` — оставить как обёртку/alias с тем же хендлером или пометить deprecated в описании.
-
-### Фаза 5 — Тесты
-
-- [ ] Расширить `tests/conftest.py`: тестовая БД in-memory `sqlite+aiosqlite://`.
-- [ ] Тесты репозиториев (CRUD + recent).
-- [ ] Тесты эндпоинтов с моками `SolanaService` / Gemini где нужно.
-
-### Creative / решения на BUILD (без отдельного CREATIVE-документа)
-
-- Поведение **GET /agents/{agent_id}**, если агент есть в БД, но PDA ещё не создан на chain: варианты **404** vs ответ только из БД — выбрать один и задокументировать.
-- Миграции: для MVP достаточно `create_all`; при росте — Alembic (отдельная задача).
+- **Зависимости:** версия ElizaOS, формат character и плагина MCP.
+- **Риск:** in-memory реестр миссий теряется при рестарте KYA — для прод предусмотреть смену бэкенда хранилища без смены API.
+- **Риск:** двойной spawn при повторном вызове register с тем же owner — идемпотентность (ключ Eliza по `agent_id` или проверка существующего инстанса) — вынести в CREATIVE/BUILD.
 
 ---
 
-## HTTP
+## Creative Phases Required (Phase 7)
 
-| Метод | Путь | Статус |
-|--------|------|--------|
-| GET | `/health` | есть |
-| POST | `/verify-intent` | есть → оставить/deprecated в пользу `/agents/verify-intent` |
-| POST | `/agents/verify-intent` | **план** |
-| POST | `/agents/register` | есть → **план**: тело + ответ |
-| GET | `/agents/{agent_id}` | есть → **план**: полный агент |
-| GET | `/agents/{agent_id}/logs` | **план** |
-| GET | `/intents/recent` | **план** |
+- [ ] **Форма `character.json` и интеграция MCP-плагина Eliza** (точные ключи `settings` / plugins).
+- [ ] **Политика при отсутствии миссии в реестре** для вызова с `agent_id`.
+- [ ] **Идемпотентность** регистрации + Eliza (повторные запросы).
 
 ---
 
-## План по дням (кратко)
+## Challenges & Mitigations
 
-- **День 1:** [x] `GeminiService` (async, `google-genai`, response schema), `POST /verify-intent`, `models.py`, `core/deps.py`, `kya-backend/.env`, тесты `pytest` (4 passed, Python 3.13).
-- **День 2:** [x] `idl/kya_program.json` (полный IDL), `SolanaService` (`register_agent_on_chain`, `log_intent_on_chain`, `get_agent_info`), после `verify-intent` авто-`logIntent`; [ ] сверить **PDA seeds** с Rust при ошибках on-chain.
-- **День 3:** MCP в `app/mcp/server.py`, деплой.
-
----
-
-## Зависимости
-
-См. **`requirements.txt` в корне репозитория** (`google-genai`, `solana>=0.36`, `solders>=0.21`, `anchorpy>=0.21`, `mcp`, FastAPI stack).
-
-**Примечание (фактическая структура):** код лежит в **`KYA-Solana/app/`**, каталога **`kya-backend/`** в репозитории нет — разделы PLAN выше описывают историческое целевое дерево; запуск: из корня `uvicorn app.main:app`.
+| Challenge | Mitigation |
+|-----------|------------|
+| Документация Eliza REST расходится с версией | Зафиксировать версию в README / techContext; интеграционный smoke-тест в CI или manual checklist |
+| Секрет в character уходит на сторону Eliza | Отдельный ограниченный MCP API key; ротация через `.env` |
+| Multi-instance KYA | Интерфейс `MissionStore` + Redis в следующей итерации |
+| Solana tx успешна, Eliza упала | Явная ошибка в ответе + retry/stop ручкой; не блокировать регистрацию в chain |
 
 ---
 
-## Status
+## Сводка доставленного ранее (живой snapshot)
 
-- [x] VAN, PLAN, CREATIVE
-- [x] PLAN: новая структура `kya-backend/` (2026) — **частично устарело:** фактически плоский корень + `app/`
-- [x] **PLAN (2026-04):** Repository + новые эндпоинты (`/agents/verify-intent`, расширенный register, logs, `/intents/recent`) — см. разделы «Аудит», «Структура», «План реализации» выше
-- [x] BUILD — **день 1** (инфраструктура + verify-intent)
-- [x] BUILD — **день 2** (часть): Solana + связка verify → `logIntent`, `/agents/register`
-- [x] BUILD — день 3 (MCP stdio: `app/mcp/server.py`)
-- [x] BUILD — выравнивание **solana-py 0.36+** / **anchorpy 0.21+** / **solders**
-- [x] REFLECT — см. `memory-bank/reflection/reflection-deps-solana036.md`
-- [x] BUILD — **on-chain only** (2026-04): `POST /agents/register` с `agent_name`/`max_amount` в инструкцию; `GET /agents/{id}` с полями AgentRecord из PDA; `GET /agents/{id}/logs` (IntentLog → `IntentEntry[]`); IDL в `idl/kya_program.json` приведён к формату **anchorpy_core**; PDA логов: **`log` + owner**
-- [ ] BUILD — фазы с локальной БД (0–5 из старого плана) — **отменено по запросу** (только chain)
+- **Stack:** FastAPI, Gemini, Solana (0.36+, solders, anchorpy 0.21+), MCP **stdio** + **HTTP/SSE** (`/mcp`).
+- **On-chain:** `IntentRecord`, `register_agent`, `log_intent`, `logger_authority`, `decision` u8; legacy + anchor030 IDL.
+- **Репо:** `KYA-Solana/app/`, Memory Bank в `memory-bank/`.
 
-## Next
+Актуальные детали API, MCP и тестов: **`progress.md`**.
 
-При смене программы — обновить **legacy IDL** вручную или скриптом из `anchor idl build`; при необходимости **`/reflect`** / **`/archive`**.
+## Ссылки
+
+| Документ | Назначение |
+|----------|------------|
+| [archive-kya-backend-2026-04.md](archive/archive-kya-backend-2026-04.md) | Архив вехи backend 2026-04 |
+| [archive-phase6-cloud-mcp-sse.md](archive/archive-phase6-cloud-mcp-sse.md) | Архив облачного MCP (SSE) |
+| [progress.md](progress.md) | Snapshot эндпоинтов / MCP / тестов |
+| [reflection-phase6-cloud-mcp-sse.md](reflection/reflection-phase6-cloud-mcp-sse.md) | Рефлексия Phase 6 |
+| [reflection-anchor030-architecture.md](reflection/reflection-anchor030-architecture.md) | Рефлексия по IDL |
+| [reflection-deps-solana036.md](reflection/reflection-deps-solana036.md) | Рефлексия по solana-py |
+
+## Отложено / не делалось
+
+- Локальная БД, Repository, `/intents/recent` из БД — **отменено** (on-chain only).
+- Отдельный путь `POST /agents/verify-intent` — не внедрялся; используется **`POST /verify-intent`**.

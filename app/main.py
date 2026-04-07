@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.endpoints import router
+from app.api.mcp import mcp_asgi_app
 
 logging.basicConfig(level=logging.INFO)
 
@@ -24,6 +25,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],  # Разрешаем все заголовки
     )
     app.include_router(router)
+    app.mount("/mcp", mcp_asgi_app)
     return app
 
 

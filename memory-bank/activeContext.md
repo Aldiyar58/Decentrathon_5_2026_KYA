@@ -2,12 +2,19 @@
 
 ## Current focus
 
-**BUILD день 1 выполнен:** `kya-backend` — async `POST /verify-intent` → `GeminiService` (`google-genai`, `response_schema`, `gemini-2.0-flash`), поля ответа `decision` / `reasoning` / **`risk_level`** (0–100). `core/deps.py`, тесты `pytest` зелёные (Python 3.13).
+Нет активной задачи по workflow Memory Bank.
 
 ## Immediate next step
 
-**День 2:** `SolanaService`, реальный `idl/kya_program.json`, реализация `/agents/register`.
+Команда **`/van`** для новой задачи (или явная цель: прод-деплой, e2e MCP-клиент, streamable HTTP, и т.д.).
 
 ## Latest changes
 
-- `kya-backend/.env` с `GEMINI_API_KEY`, `SOLANA_RPC_URL`, `SOLANA_PRIVATE_KEY` (пустые значения); корневой `.gitignore` игнорирует `.env`.
+- **Заархивировано:** Phase 6 — облачный MCP (SSE): [archive-phase6-cloud-mcp-sse.md](archive/archive-phase6-cloud-mcp-sse.md)
+- Эпизодический план Phase 6 удалён из `tasks.md`; чеклисты перенесены в архив.
+- Пользовательская документация MCP: **`README_MCP.md`** (корень репозитория).
+
+## Archive reference
+
+- [archive-kya-backend-2026-04.md](archive/archive-kya-backend-2026-04.md) — веха backend 2026-04
+- [archive-phase6-cloud-mcp-sse.md](archive/archive-phase6-cloud-mcp-sse.md) — HTTP/SSE MCP, API Key, общие handlers

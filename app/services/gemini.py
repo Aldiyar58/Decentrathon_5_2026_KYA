@@ -28,6 +28,29 @@ Field semantics:
 If context is missing, infer conservatively, prefer "escalate" over "approve" when unsure, and assign a higher risk_level when uncertain.
 """
 
+MISSION_ALIGNMENT_BLOCK = """
+
+## Mission alignment (when a registered mission is provided below)
+
+Compare the agent's current intent to its registered mission.
+- If the described action falls outside the mission, contradicts it, or is not a reasonable way to fulfill it, you MUST respond with decision "reject" (on-chain this is decision code 1).
+- If the intent is within mission scope, still apply the usual safety and policy rules from the base instructions above.
+- If mission alignment is ambiguous, use "escalate" rather than "approve".
+
+Registered agent mission:
+---
+{mission}
+---
+"""
+
+
+def _system_instruction(agent_mission: str | None) -> str:
+    base = KYA_SYSTEM_INSTRUCTION
+    if agent_mission and agent_mission.strip():
+        return base + MISSION_ALIGNMENT_BLOCK.format(mission=agent_mission.strip())
+    return base
+
+
 VERIFY_INTENT_RESPONSE_SCHEMA = types.Schema(
     type=types.Type.OBJECT,
     properties={
@@ -82,10 +105,12 @@ class GeminiService:
         self,
         intent_text: str,
         context_json: str | None = None,
+        *,
+        agent_mission: str | None = None,
     ) -> VerifyIntentResponse:
         client = _client_for(self._settings.gemini_api_key)
         config = types.GenerateContentConfig(
-            system_instruction=KYA_SYSTEM_INSTRUCTION,
+            system_instruction=_system_instruction(agent_mission),
             response_mime_type="application/json",
             response_schema=VERIFY_INTENT_RESPONSE_SCHEMA,
         )

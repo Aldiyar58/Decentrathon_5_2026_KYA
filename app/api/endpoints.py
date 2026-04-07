@@ -14,7 +14,9 @@ from app.schemas.models import (
     VerifyIntentRequest,
     VerifyIntentResponse,
 )
+from app.services.agent_mission_store import get_mission
 from app.services.gemini import GeminiService
+from app.services.mcp_tool_handlers import execute_register_agent_flow
 from app.services.solana import (
     SolanaService,
     gemini_decision_to_u8,
@@ -43,8 +45,17 @@ async def verify_intent(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="GEMINI_API_KEY is not configured",
         )
+    mission = (
+        get_mission(body.agent_id.strip())
+        if body.agent_id and body.agent_id.strip()
+        else None
+    )
     try:
-        result = await gemini.verify_intent(body.intent_text, body.context_json)
+        result = await gemini.verify_intent(
+            body.intent_text,
+            body.context_json,
+            agent_mission=mission,
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -169,14 +180,16 @@ async def register_agent(
             detail="KYA_PROGRAM_ID и ключ (SOLANA_PRIVATE_KEY / KYA_KEYPAIR_PATH) обязательны",
         )
     try:
-        logger_pk = solana.resolve_register_logger_authority(body.logger_authority)
-        out = await solana.register_agent_on_chain(
+        out = await execute_register_agent_flow(
+            settings,
+            solana,
             agent_name=body.agent_name,
             max_amount=body.max_amount,
-            logger_authority=logger_pk,
+            logger_authority=body.logger_authority,
+            description=body.description,
         )
     except Exception as e:
-        logger.exception("register_agent_on_chain failed")
+        logger.exception("register_agent flow failed")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=str(e),
@@ -186,4 +199,7 @@ async def register_agent(
         pda_address=out["pda_address"],
         logger_authority=out["logger_authority"],
         transaction_signature=out["transaction_signature"],
+        eliza_status=out.get("eliza_status"),
+        eliza_agent_id=out.get("eliza_agent_id"),
+        eliza_error=out.get("eliza_error"),
     )
