@@ -37,6 +37,7 @@ class VerifyIntentResponse(BaseModel):
 class RegisterAgentRequest(BaseModel):
     agent_name: str = Field(min_length=1, max_length=256)
     max_amount: int = Field(ge=0, le=2**64 - 1)
+    description: str = Field(min_length=1, max_length=1000)
     logger_authority: str | None = Field(
         default=None,
         description="Base58 pubkey для поля on-chain; по умолчанию — из KYA_LOGGER_AUTHORITY или signer",
